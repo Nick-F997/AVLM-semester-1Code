@@ -9,12 +9,15 @@ close all;
 %% Variable for reading in Unix or Windows filepaths
 windowsOrUnix = '/';
 
+%% Image size
+imageSize = 224;
+
 %% Training/Validation Split function
 trainingValidationSplit = 0.7;
 
 %% Training variables
 maxEpochs = 15;
-learningRate = 0.01;
+learningRate = 0.0001;
 batchSize = 8;
 
 %% Number of output classes
@@ -39,19 +42,20 @@ challenging_path = sprintf("%s%s", root_path, challenging_imgs);
 dataStoreBasic = imageDatastore(basic_path,...
                     'IncludeSubfolders',true,...
                     'LabelSource','foldernames', 'ReadFcn', ...
-                    @(f) repmat(imresize(imread(f),[227 227]),[1,1,3]));
+                    @(f) repmat(imresize(imread(f),[imageSize imageSize ...
+                    ]),[1,1,3]));
 
 %% Data store of distorted and noisy images
 dataStoreChallenging = imageDatastore(challenging_path,...
                     'IncludeSubfolders',true,...
                     'LabelSource','foldernames', 'ReadFcn', ...
-                    @(f) repmat(imresize(imread(f),[227 227]),[1,1,3]));
+                    @(f) repmat(imresize(imread(f),[imageSize imageSize]),[1,1,3]));
 
 %% Data store of combined images
 dataStoreCombined = imageDatastore([basic_path, challenging_path],...
                     'IncludeSubfolders',true,...
                     'LabelSource','foldernames', 'ReadFcn', ...
-                    @(f) repmat(imresize(imread(f),[227 227]),[1,1,3]));
+                    @(f) repmat(imresize(imread(f),[imageSize imageSize]),[1,1,3]));
 
 
 %% Get different data sets and split them 
@@ -65,15 +69,24 @@ dataStoreCombined = imageDatastore([basic_path, challenging_path],...
                                         trainingValidationSplit, 'randomized');
 
 %% Bring in Alex net for basic layer
-anet = alexnet;
+% anet = alexnet;
 %% Create 3 separate layers (not sure if good idea)
-layers_complex = anet.Layers;
+% layers_complex = anet.Layers;
 %% Unload AlexNet from memory
-clear anet;
-
+% clear anet;
+anet = resnet101;
+lgraph = anet.layerGraph;
+lgraph = removeLayers(lgraph,'fc1000');
+lgraph = removeLayers(lgraph,'prob');
+lgraph = removeLayers(lgraph,'ClassificationLayer_predictions');
+lgraph = addLayers(lgraph,fullyConnectedLayer(numOutputs,'Name','fc'));
+lgraph = addLayers(lgraph,classificationLayer("Name",'output'));
+lgraph = connectLayers(lgraph,'pool5','fc');
+lgraph = connectLayers(lgraph,'fc','output');
 %% Extract last two layers and create number of outputs
-layers_complex(end-2) = fullyConnectedLayer(numOutputs, 'Name', 'fc8');
-layers_complex(end) = classificationLayer("Name",'output');
+
+
+% analyzeNetwork(lgraph);
 
 %% Options for training basic layer
 options_combined = trainingOptions('sgdm', 'Plots','training-progress',...
@@ -81,13 +94,13 @@ options_combined = trainingOptions('sgdm', 'Plots','training-progress',...
 'maxEpochs', maxEpochs, 'InitialLearnRate',learningRate);
 
 %% Train the network
-trained_network = trainNetwork(training_data_complex, layers_complex, options_combined);
+trained_network = trainNetwork(training_data_complex, lgraph, options_combined);
 
 %% Save the network for later
-trained_struct = trained_network.saveobj;
+% trained_struct = trained_network.saveobj;
 
 %% save it to mat file
-save(complex_weights, "trained_struct", "options_combined");
+% save(complex_weights, "trained_struct", "options_combined");
 
 clear layers_complex;
 clear trained_struct;
