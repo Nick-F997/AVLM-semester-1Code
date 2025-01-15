@@ -18,3 +18,5 @@ Additionally, the image augmentation code has been included in the directory `im
 python3 scripts/main.py <path to imageData/ directory> <path to an output directory>
 ```
 I would recommend using an absolute path, it was thrown together in a hurry and could break something! 
+
+Finally, `results-for-submission` includes the data gathered from each training iteration, alongside some examples of augmented images. This file is excluded from the blackboard submission, and can be found on my project [GitHub repo](https://github.com/Nick-F997/AVLM-semester-1Code).
