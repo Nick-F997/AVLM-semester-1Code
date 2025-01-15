@@ -21,36 +21,41 @@ batchSize = 128;
 %% Number of output classes
 numOutputs = 100;
 
-%% Array of learning rates
+%% Learning rates
 learningRates = [0.001, 0.0001, 0.00001, 0.01, 0.1];
 
+%weights_path = sprintf("..%sweights%s", windowsOrUnix, windowsOrUnix);
 
-weights_path = sprintf("..%sweights%s", windowsOrUnix, windowsOrUnix);
+%complex_weights = sprintf("%scomplex_weights.mat", weights_path);
 
-complex_weights = sprintf("%scomplex_weights.mat", weights_path);
-
-%% Get training/testing data
+%% Get training data
 dataStoreChallenging = imageDatastore(PATH,...
                     'IncludeSubfolders',true,...
                     'LabelSource','foldernames', 'ReadFcn', ...
-                    @(f) repmat(imresize(imread(f),[227 227]),[1,1,3]));
+                    @(f) repmat(imresize(imread(f),[224 224]),[1,1,3]));
 
-
-%% Split training testing data
 [training_data, testing_data] = splitEachLabel(dataStoreChallenging, ...
                                         trainingValidationSplit, 'randomized');
 
 for i = 1:length(learningRates)
-    %% Bring in Alex net for basic layer
-    anet = alexnet;
-    %% Create 3 separate layers (not sure if good idea)
-    layers = anet.Layers;
-    %% Unload AlexNet from memory
+
+    %% Bring in GoogLeNet
+    anet = mobilenetv2;
+    lgraph = layerGraph(anet);
     clear anet;
 
-    %% Extract last two layers and create number of outputs
-    layers(end-2) = fullyConnectedLayer(numOutputs, 'Name', 'fc8');
-    layers(end) = classificationLayer("Name",'output');
+    % Remove the final layers
+    lgraph = removeLayers(lgraph, 'Logits');
+    lgraph = removeLayers(lgraph, 'ClassificationLayer_Logits');
+
+    % Add new fully connected and classification layers
+    lgraph = addLayers(lgraph, fullyConnectedLayer(numOutputs, 'Name', 'fc'));
+    lgraph = addLayers(lgraph, classificationLayer('Name', 'output'));
+
+    % Connect the new layers
+    lgraph = connectLayers(lgraph, 'global_average_pooling2d_1', 'fc');
+    lgraph = connectLayers(lgraph, 'fc', 'Logits_softmax');
+    lgraph = connectLayers(lgraph, 'Logits_softmax', 'output');
 
 
     %% Options for training basic layer
@@ -62,21 +67,20 @@ for i = 1:length(learningRates)
 
     %% Train the network
     tic; % Starts stopwatch
-    [trained_network, info] = trainNetwork(training_data, layers,options);
+    [trained_network, info] = trainNetwork(training_data, lgraph,options);
     elapsedTime = toc;
     test_prediction = classify(trained_network, testing_data);
 
-    %% Get accuracy
+    %% GEt accuracy
     accuracy_array = test_prediction == testing_data.Labels;
     accuracy = mean(accuracy_array) * 100;
 
-    %% Generate confusion matrix (unused in final report)
+    %% Confusion matrix
     [cmap,clabel] = confusionmat(testing_data.Labels,test_prediction);
     confusionchart(cmap, clabel);
     
     title(sprintf("Test Acuracy = %.2f%%", accuracy));
 
-    %% resize confusion matrix
     x0 = 10;
     y0 = 10;
     width = 1920;
@@ -104,12 +108,12 @@ for i = 1:length(learningRates)
     disp('F1-score for each class:');
     disp(F1);
 
-    % calculate the average F1-score
+    % Optionally, calculate the average F1-score
     averageF1 = mean(F1);
     disp('Average F1-score:');
     disp(averageF1);
 
-    %% Create struct with metrics
+    %% Save metrics
     data_metrics = struct('LearningRate', learningRates(i), ...
                           'Accuracy', info.FinalValidationAccuracy, ...
                           'Time', elapsedTime, ...
@@ -117,7 +121,6 @@ for i = 1:length(learningRates)
                           'AverageF1', averageF1);
     data_metrics
 
-    %% Save struct
     filename = sprintf("metrics_interation%d.mat", i);
     save(filename, "data_metrics");
     %% Save the network for later
@@ -126,7 +129,7 @@ for i = 1:length(learningRates)
     %% save it to mat file
     %save(complex_weights, "trained_struct", "options");
 
-    clear layers;
+    clear lgraph;
     %clear trained_struct;
     clear trained_network;
 end
